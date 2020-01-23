@@ -23,7 +23,6 @@ docker run \
 docker container exec -it repeater /bin/bash
 
 docker login --username=yourhubusername --email=youremail@company.com
-Jordanwa1ker
 
 $ docker push objectcomputing/repeater:v1
 ```
