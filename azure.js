@@ -45,7 +45,10 @@ module.exports = (args, sendTo) => {
 
   const processVirtualMachineScaleSet = function (client, ips, localIps, vmssName) {
     client.networkInterfaces._listVirtualMachineScaleSetNetworkInterfaces(args.azure, vmssName, function(err, results) {
-      if (err) console.log(err);
+      if (err) {
+        console.log(err);
+        return;
+      }
 
       results.forEach(result => {
         result.ipConfigurations.forEach(ip => {
