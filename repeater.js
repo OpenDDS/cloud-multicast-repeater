@@ -34,6 +34,11 @@ const args = require('yargs')
     type: 'string',
     requiresArg: false
   })
+  .option('vmssList', {
+    describe: 'Get the list of names of required VMSS Scale Sets',
+    type: 'array',
+    requiresArg: false
+  })
   .option('aws', {
     describe: 'Get send addresses from AWS (tag)',
     type: 'string',
