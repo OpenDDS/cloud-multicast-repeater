@@ -75,11 +75,8 @@ module.exports = (args, sendTo) => {
         vmssName,
         function (err, results) {
           if (err) {
-            // Do Nothing if the VMSS is deleted, so than for next deployment inter VMSS forwarding will work
-            if (
-              err.message !==
-              `Can not perform requested operation on nested resource. Parent resource '${vmssName}' not found.`
-            ) {
+            // Do nothing if the VMSS is deleted, so that for next deployment inter VMSS forwarding will work
+            if (err.code !== 'ParentResourceNotFound') {
               console.log(err)
             }
             resolve(null)
