@@ -1,6 +1,8 @@
 const MsRest = require('ms-rest-azure')
 const NetworkManagementClient = require('azure-arm-network')
 const getLocalIps = require('./get-local-ips')
+const { DefaultAzureCredential } = require("@azure/identity");
+const { ComputeManagementClient } = require("@azure/arm-compute");
 
 if (!process.env['AZURE_SUBSCRIPTION_ID']) {
   throw new Error('Please set the AZURE_SUBSCRIPTION_ID environment variable')
@@ -64,10 +66,7 @@ module.exports = (args, sendTo) => {
 
   const processVirtualMachineScaleSetPromise = function (
     client,
-    ips,
-    localIps,
-    vmssName,
-    vmssNameList
+    vmssName
   ) {
     return new Promise((resolve, reject) => {
       client.networkInterfaces._listVirtualMachineScaleSetNetworkInterfaces(
@@ -87,32 +86,54 @@ module.exports = (args, sendTo) => {
     })
   }
 
+  async function getVMDetailsByTag(tagKey, tagValue) {
+
+    const credential = new DefaultAzureCredential();
+
+    const client = new ComputeManagementClient(credential, subscriptionId);
+
+    // Get the list of VMs
+    //const vms = await client.virtualMachines.listAll().byPage().next();
+
+    const vmss = await client.virtualMachineScaleSets.listAll().byPage().next();
+
+    const filteredVMSSs = vmss.value.filter(vms => vms.tags && vms.tags[tagKey] === tagValue).map(vms => vms.name);
+
+    return filteredVMSSs;
+
+  }
+
   const processMultipleVirtualMachineScaleSets = function (
     client,
     ips,
     localIps,
-    vmssNameList
+    tagKey,
+    tagValue
   ) {
-    const requests = vmssNameList.map((vmssName) => {
-      return new Promise(async resolve => {
-        const results = await processVirtualMachineScaleSetPromise(client, ips, localIps, vmssName, vmssNameList)
-        if (results && results.length) {
-          results.forEach(result => {
-            result.ipConfigurations.forEach(ip => {
-              if (!localIps.includes(ip.privateIPAddress)) {
-                ips.push(ip.privateIPAddress)
-              }
+      getVMDetailsByTag(tagKey, tagValue).then(filteredVMSS => {
+      const requests = filteredVMSS.map((vmssName) => {
+        return new Promise(async resolve => {
+          const results = await processVirtualMachineScaleSetPromise(client, vmssName)
+          if (results && results.length) {
+            results.forEach(result => {
+              result.ipConfigurations.forEach(ip => {
+                if (!localIps.includes(ip.privateIPAddress)) {
+                  ips.push(ip.privateIPAddress)
+                }
+              })
             })
-          })
-          resolve(ips)
-        }
-        resolve([])
+            resolve(ips)
+          }
+          resolve([])
+        })
       })
-    })
-
-    Promise.allSettled(requests).then((result) => {
-      updateSendTo(ips)
-    })
+      Promise.allSettled(requests).then((result) => {
+        console.log(ips);
+        updateSendTo(ips)
+      })
+    }).catch(err => {
+      console.error("An error occurred:", err);
+    });
   }
 
   const updateFunc = () => {
@@ -122,9 +143,12 @@ module.exports = (args, sendTo) => {
 
       if (typeof args.vmss !== 'undefined' && args.vmss) {
         processVirtualMachineScaleSet(client, ips, getLocalIps(), args.vmss)
-      } else if (typeof args.vmssList !== 'undefined' && args.vmssList) {
-        const vmssList = args.vmssList.filter(vm => vm.trim())
-        processMultipleVirtualMachineScaleSets(client, ips, getLocalIps(), vmssList)
+      } else if (typeof args.vmssTag !== 'undefined' && args.vmssTag) {
+        console.log(args.vmssTag);
+        const vmssTagInfo = args.vmssTag.filter(keyVal => keyVal.trim())
+        if(vmssTagInfo.length != 2)
+          throw new Error('Please provide vmss proper tag key and value');
+        processMultipleVirtualMachineScaleSets(client, ips, getLocalIps(), vmssTagInfo[0], vmssTagInfo[1])
       } else {
         client.networkInterfaces.list(args.azure).then(interfaces => {
           processInterfaces(client, interfaces, ips, getLocalIps())

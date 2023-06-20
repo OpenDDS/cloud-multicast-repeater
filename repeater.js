@@ -34,8 +34,8 @@ const args = require('yargs')
     type: 'string',
     requiresArg: false
   })
-  .option('vmssList', {
-    describe: 'Get the list of names of required VMSS Scale Sets',
+  .option('vmssTag', {
+    describe: 'Get the VMSS Scale Sets tag key and value',
     type: 'array',
     requiresArg: false
   })
