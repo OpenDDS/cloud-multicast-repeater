@@ -121,7 +121,7 @@ module.exports = (args, sendTo) => {
                 }
               })
             })
-            resolve(ips)
+            return resolve(ips)
           }
           resolve([])
         })
