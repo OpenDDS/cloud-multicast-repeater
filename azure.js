@@ -94,16 +94,11 @@ module.exports = (args, sendTo) => {
 
     const client = new ComputeManagementClient(credential, subscriptionId);
 
-    // Get the list of VMs
-    //const vms = await client.virtualMachines.listAll().byPage().next();
-
     const vmss = await client.virtualMachineScaleSets.listAll().byPage().next();
 
-    const filteredVMSSs = vmss.value
+    return vmss.value
       .filter(vms => vms.tags && vms.tags[tagKey] === tagValue)
       .map(vms => vms.name);
-
-    return filteredVMSSs;
 
   }
 
@@ -147,7 +142,6 @@ module.exports = (args, sendTo) => {
       if (typeof args.vmss !== 'undefined' && args.vmss) {
         processVirtualMachineScaleSet(client, ips, getLocalIps(), args.vmss)
       } else if (typeof args.vmssTag !== 'undefined' && args.vmssTag) {
-        console.log(args.vmssTag);
         const vmssTagInfo = args.vmssTag.filter(keyVal => keyVal.trim())
         if (vmssTagInfo.length != 2)
           throw new Error('Please provide vmss proper tag key and value both');
