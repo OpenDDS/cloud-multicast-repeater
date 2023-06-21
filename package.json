@@ -1,14 +1,16 @@
 {
   "name": "repeater",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Multicast Datagram Repeater",
   "main": "repeater.js",
   "bin": "./repeater.js",
   "dependencies": {
+    "@azure/arm-compute": "^21.0.0",
+    "@azure/identity": "^3.2.2",
     "@google-cloud/compute": "^3.9.1",
     "aws-sdk": "^2.1394.0",
     "azure-arm-network": "^11.1.0",
-    "ms-rest-azure": "^2.6.2",
+    "ms-rest-azure": "^3.0.2",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
