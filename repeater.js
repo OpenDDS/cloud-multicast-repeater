@@ -50,6 +50,12 @@ const args = require('yargs')
     requiresArg: true,
     default: 60
   })
+  .option('azureRetry', {
+    describe: 'Retry interval in seconds for Azure',
+    type: 'number',
+    requiresArg: false,
+    default: 7
+  })
   .option('verbose', {
     describe: 'Log each incoming datagram',
     alias: 'v',
