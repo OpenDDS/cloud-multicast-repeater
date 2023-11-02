@@ -168,7 +168,7 @@ module.exports = (args, sendTo) => {
         clearInterval(intervalHandle);
         intervalHandle = null;
       }
-      setTimeout(() => {
+      intervalHandle = setTimeout(() => {
         updateFunc();
       }, args.azureRetry * 1000);
     });
