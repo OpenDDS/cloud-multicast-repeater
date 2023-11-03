@@ -8,6 +8,8 @@ if (!process.env['AZURE_SUBSCRIPTION_ID']) {
   throw new Error('Please set the AZURE_SUBSCRIPTION_ID environment variable')
 }
 const subscriptionId = process.env['AZURE_SUBSCRIPTION_ID']
+let intervalHandle = null;
+let errorCounter = 0;
 
 module.exports = (args, sendTo) => {
   let previousIps = []
@@ -151,7 +153,25 @@ module.exports = (args, sendTo) => {
           processInterfaces(client, interfaces, ips, getLocalIps())
         })
       }
+      errorCounter = 0;
+      if(intervalHandle == null)
+        intervalHandle = setInterval(updateFunc, args.interval * 1000)
     })
+    .catch((err) => {
+      console.log(err);
+      errorCounter++;
+      if (errorCounter > 10)
+        throw new Error(
+          "Failed to communicate with azure API"
+        );
+      if (intervalHandle) {
+        clearInterval(intervalHandle);
+        intervalHandle = null;
+      }
+      intervalHandle = setTimeout(() => {
+        updateFunc();
+      }, args.azureRetry * 1000);
+    });
   }
 
   updateFunc()
