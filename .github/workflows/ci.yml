@@ -35,6 +35,11 @@ jobs:
         cache: 'npm'
     - run: npm ci
     - run: npm run build --if-present
+    - name: upload workspace before test
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ github.job }}-${{ matrix.node-version }}
+        path: .
     - name: Test
       run: |
         export ACE_ROOT=`pwd`/ACE_TAO/ACE
