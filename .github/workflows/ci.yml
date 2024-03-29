@@ -16,20 +16,20 @@ jobs:
       matrix:
         node-version: [18.x, 20.x, 21.x]
     steps:
-    - uses: actions/checkout@v3
+    - name: Check out repeater
+      uses: actions/checkout@v4
     - name: Check out ACE_TAO
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: DOCGroup/ACE_TAO
         path: ACE_TAO
     - name: Check out OpenDDS
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: OpenDDS/OpenDDS
         path: OpenDDS
-    - uses: actions/checkout@v3
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
