@@ -33,6 +33,6 @@ jobs:
       run: |
         export ACE_ROOT=`pwd`/ACE_TAO/ACE
         export DDS_ROOT=`pwd`/OpenDDS
-        cd test
+        cd tests
         npm ci
         ./basic_forward.pl
