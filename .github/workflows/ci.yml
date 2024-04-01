@@ -1,0 +1,49 @@
+name: CI
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '10 0 * * 0'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18.x, 20.x, 21.x]
+    steps:
+    - name: Check out repeater
+      uses: actions/checkout@v4
+    - name: Check out ACE_TAO
+      uses: actions/checkout@v4
+      with:
+        repository: DOCGroup/ACE_TAO
+        path: ACE_TAO
+    - name: Check out OpenDDS
+      uses: actions/checkout@v4
+      with:
+        repository: OpenDDS/OpenDDS
+        path: OpenDDS
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    - run: npm ci
+    - run: npm run build --if-present
+#    - name: upload workspace before test
+#      uses: actions/upload-artifact@v4
+#      with:
+#        name: ${{ github.job }}-${{ matrix.node-version }}
+#        path: .
+    - name: Test
+      run: |
+        export ACE_ROOT=`pwd`/ACE_TAO/ACE
+        export DDS_ROOT=`pwd`/OpenDDS
+        cd tests
+        npm ci
+        ./basic_forward.pl
