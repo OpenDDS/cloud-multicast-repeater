@@ -28,7 +28,6 @@ module.exports = (args, sendTo) => {
   args.interval = args.interval || DEFAULT_UPDATE_INTERVAL
   args.azureRetry = args.azureRetry || DEFAULT_AZURE_RETRY
 
-
   const getNextRetryDelay = () => {
     const jitter = Math.random() * 0.3 + 0.85 // Random factor between 0.85 and 1.15
     currentRetryDelay = Math.min(currentRetryDelay * 2 * jitter, MAX_RETRY_DELAY)
@@ -81,13 +80,12 @@ module.exports = (args, sendTo) => {
         args.azure,
         vmssName
       )
-      
+
       const collectedInterfaces = []
       for await (const networkInterface of networkInterfaces) {
         collectedInterfaces.push(networkInterface)
       }
-      
-  
+
       collectedInterfaces.forEach(networkInterface => {
         if (networkInterface.ipConfigurations) {
           networkInterface.ipConfigurations.forEach(ip => {
@@ -97,7 +95,7 @@ module.exports = (args, sendTo) => {
           })
         }
       })
-      
+
       // Only update send-to mappings once we have all IPs
       updateSendTo(ips)
     } catch (error) {
@@ -140,7 +138,6 @@ module.exports = (args, sendTo) => {
     }
   }
 
-
   const updateFunc = async () => {
     try {
       const credential = new DefaultAzureCredential()
@@ -152,7 +149,7 @@ module.exports = (args, sendTo) => {
         await processVirtualMachineScaleSet(client, ips, localIps, args.vmss)
       } else if (args.vmssTag) {
         const vmssTagInfo = args.vmssTag.filter(keyVal => keyVal.trim())
-        if (vmssTagInfo.length != 2) {
+        if (vmssTagInfo.length !== 2) {
           throw new Error('Please provide vmss proper tag key and value both')
         }
         await processMultipleVirtualMachineScaleSets(client, ips, localIps, vmssTagInfo[0], vmssTagInfo[1])
@@ -161,28 +158,27 @@ module.exports = (args, sendTo) => {
         await processInterfaces(client, interfaces, ips, localIps)
       }
       resetRetryMechanism()
-      
+
       if (!intervalHandle) {
         intervalHandle = setInterval(updateFunc, args.interval * 1000)
       }
     } catch (error) {
       console.error('Azure connection error:', error)
       errorCounter++
-      
+
       if (errorCounter > MAX_RETRIES) {
         console.error(`Max retries (${MAX_RETRIES}) exceeded. Giving up.`)
         return
       }
-      
+
       if (intervalHandle) {
         clearInterval(intervalHandle)
         intervalHandle = null
       }
-      
-  
+
       const retryDelay = getNextRetryDelay()
       console.log(`Retrying in ${retryDelay} seconds (attempt ${errorCounter + 1}/${MAX_RETRIES})...`)
-      
+
       intervalHandle = setTimeout(updateFunc, retryDelay * 1000)
     }
   }
