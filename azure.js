@@ -1,26 +1,54 @@
-const MsRest = require('ms-rest-azure')
-const NetworkManagementClient = require('azure-arm-network')
-const { DefaultAzureCredential } = require("@azure/identity")
-const { ComputeManagementClient } = require("@azure/arm-compute")
+const { NetworkManagementClient } = require('@azure/arm-network')
+const { DefaultAzureCredential } = require('@azure/identity')
+const { ComputeManagementClient } = require('@azure/arm-compute')
 const getLocalIps = require('./get-local-ips')
+
+// Configuration constants
+const MAX_RETRIES = 20
+const INITIAL_RETRY_DELAY = 5 // seconds
+const MAX_RETRY_DELAY = 300 // seconds (5 minutes)
+const DEFAULT_UPDATE_INTERVAL = 60 // seconds
+const DEFAULT_AZURE_RETRY = 120 // seconds
 
 if (!process.env['AZURE_SUBSCRIPTION_ID']) {
   throw new Error('Please set the AZURE_SUBSCRIPTION_ID environment variable')
 }
+
 const subscriptionId = process.env['AZURE_SUBSCRIPTION_ID']
-let intervalHandle = null;
-let errorCounter = 0;
+let intervalHandle = null
+let errorCounter = 0
 
 module.exports = (args, sendTo) => {
-  let previousIps = []
+  if (!args.azure) {
+    throw new Error('Azure resource group name is required')
+  }
 
-  const updateSendTo = function (ips) {
-    // Remove existing.
+  let previousIps = []
+  let currentRetryDelay = INITIAL_RETRY_DELAY
+  args.interval = args.interval || DEFAULT_UPDATE_INTERVAL
+  args.azureRetry = args.azureRetry || DEFAULT_AZURE_RETRY
+
+
+  const getNextRetryDelay = () => {
+    const jitter = Math.random() * 0.3 + 0.85 // Random factor between 0.85 and 1.15
+    currentRetryDelay = Math.min(currentRetryDelay * 2 * jitter, MAX_RETRY_DELAY)
+    return currentRetryDelay
+  }
+
+  // Reset retry mechanism
+  const resetRetryMechanism = () => {
+    errorCounter = 0
+    currentRetryDelay = INITIAL_RETRY_DELAY
+  }
+
+  // Update IP mappings
+  const updateSendTo = (ips) => {
+    // Remove existing mappings
     previousIps.forEach((addr) => {
       delete sendTo[addr]
     })
 
-    // Insert new.
+    // Add new mappings
     ips.forEach((addr) => {
       sendTo[addr] = args.uport
     })
@@ -28,153 +56,153 @@ module.exports = (args, sendTo) => {
     previousIps = ips
   }
 
-  const processInterfaces = function (client, interfaces, ips, localIps) {
-    interfaces.forEach(networkInterface => {
-      if (networkInterface.virtualMachine) {
-        networkInterface.ipConfigurations.forEach(config => {
-          if (!localIps.includes(config.privateIPAddress)) {
-            ips.push(config.privateIPAddress)
-          }
-        })
+  const processInterfaces = async (client, interfaces, ips, localIps) => {
+    try {
+      for await (const networkInterface of interfaces) {
+        if (networkInterface.virtualMachine) {
+          networkInterface.ipConfigurations.forEach(config => {
+            if (!localIps.includes(config.privateIPAddress)) {
+              ips.push(config.privateIPAddress)
+            }
+          })
+        }
       }
-    })
-    if (interfaces.nextLink) {
-      client.networkInterfaces.listNext(interfaces.nextLink).then(interfaces => {
-        processInterfaces(client, interfaces, ips, localIps)
-      })
-    } else {
       updateSendTo(ips)
+    } catch (error) {
+      console.error('Error processing interfaces:', error)
+      throw error
     }
   }
 
-  const processVirtualMachineScaleSet = function (client, ips, localIps, vmssName) {
-    client.networkInterfaces
-      ._listVirtualMachineScaleSetNetworkInterfaces(args.azure, vmssName,
-        function (err, results) {
-          if (err) {
-            console.log(err);
-            return;
-          }
-
-          results.forEach(result => {
-            result.ipConfigurations.forEach(ip => {
-              if (!localIps.includes(ip.privateIPAddress)) {
-                ips.push(ip.privateIPAddress)
-              }
-            })
-          })
-
-          updateSendTo(ips)
-        })
-  }
-
-  const processVirtualMachineScaleSetPromise = function (
-    client,
-    vmssName
-  ) {
-    return new Promise((resolve, reject) => {
-      client.networkInterfaces._listVirtualMachineScaleSetNetworkInterfaces(
+  // Process single VMSS
+  const processVirtualMachineScaleSet = async (client, ips, localIps, vmssName) => {
+    try {
+      const networkInterfaces = await client.networkInterfaces.listVirtualMachineScaleSetNetworkInterfaces(
         args.azure,
-        vmssName,
-        function (err, results) {
-          if (err) {
-            // Do nothing if the VMSS is deleted, so that for next deployment inter VMSS forwarding will work
-            if (err.code !== 'ParentResourceNotFound') {
-              console.log(err)
-            }
-            resolve(null)
-          }
-          resolve(results)
-        }
+        vmssName
       )
-    })
-  }
-
-  async function getVMDetailsByTag(tagKey, tagValue) {
-
-    const credential = new DefaultAzureCredential();
-
-    const client = new ComputeManagementClient(credential, subscriptionId);
-
-    const vmss = await client.virtualMachineScaleSets.listAll().byPage().next();
-
-    return vmss.value
-      .filter(vms => vms.tags && vms.tags[tagKey] === tagValue)
-      .map(vms => vms.name);
-
-  }
-
-  const processMultipleVirtualMachineScaleSets = function (
-    client,
-    ips,
-    localIps,
-    tagKey,
-    tagValue
-  ) {
-    getVMDetailsByTag(tagKey, tagValue).then(filteredVMSS => {
-      const requests = filteredVMSS.map((vmssName) => {
-        return new Promise(async resolve => {
-          const results = await processVirtualMachineScaleSetPromise(client, vmssName)
-          if (results && results.length) {
-            results.forEach(result => {
-              result.ipConfigurations.forEach(ip => {
-                if (!localIps.includes(ip.privateIPAddress)) {
-                  ips.push(ip.privateIPAddress)
-                }
-              })
-            })
-            return resolve(ips)
-          }
-          resolve([])
-        })
+      
+      const collectedInterfaces = []
+      for await (const networkInterface of networkInterfaces) {
+        collectedInterfaces.push(networkInterface)
+      }
+      
+  
+      collectedInterfaces.forEach(networkInterface => {
+        if (networkInterface.ipConfigurations) {
+          networkInterface.ipConfigurations.forEach(ip => {
+            if (!localIps.includes(ip.privateIPAddress)) {
+              ips.push(ip.privateIPAddress)
+            }
+          })
+        }
       })
-      Promise.allSettled(requests).then((result) => {
-        updateSendTo(ips)
-      })
-    }).catch(err => {
-      console.error("An error occurred:", err);
-    });
+      
+      // Only update send-to mappings once we have all IPs
+      updateSendTo(ips)
+    } catch (error) {
+      if (error.code === 'ParentResourceNotFound') {
+        console.log(`VMSS ${vmssName} not found - skipping`)
+        return
+      }
+      console.error(`Error processing VMSS ${vmssName}:`, error)
+      throw error
+    }
   }
 
-  const updateFunc = () => {
-    MsRest.loginWithVmMSI().then(credentials => {
-      let client = new NetworkManagementClient(credentials, subscriptionId)
+  const getVMDetailsByTag = async (tagKey, tagValue) => {
+    try {
+      const credential = new DefaultAzureCredential()
+      const client = new ComputeManagementClient(credential, subscriptionId)
+      const vmssCollection = client.virtualMachineScaleSets.listAll()
+      const filteredVMSS = []
+      for await (const vmss of vmssCollection) {
+        if (vmss.tags && vmss.tags[tagKey] === tagValue) {
+          filteredVMSS.push(vmss.name)
+        }
+      }
+      return filteredVMSS
+    } catch (error) {
+      console.error('Error getting VM details by tag:', error)
+      throw error
+    }
+  }
+
+  const processMultipleVirtualMachineScaleSets = async (client, ips, localIps, tagKey, tagValue) => {
+    try {
+      const filteredVMSS = await getVMDetailsByTag(tagKey, tagValue)
+      const requests = filteredVMSS.map(vmssName => processVirtualMachineScaleSet(client, ips, localIps, vmssName))
+      await Promise.allSettled(requests)
+      updateSendTo(ips)
+    } catch (error) {
+      console.error('Error processing multiple VMSS:', error)
+      throw error
+    }
+  }
+
+
+  const updateFunc = async () => {
+    try {
+      const credential = new DefaultAzureCredential()
+      const client = new NetworkManagementClient(credential, subscriptionId)
       const ips = []
+      const localIps = getLocalIps()
 
-      if (typeof args.vmss !== 'undefined' && args.vmss) {
-        processVirtualMachineScaleSet(client, ips, getLocalIps(), args.vmss)
-      } else if (typeof args.vmssTag !== 'undefined' && args.vmssTag) {
+      if (args.vmss) {
+        await processVirtualMachineScaleSet(client, ips, localIps, args.vmss)
+      } else if (args.vmssTag) {
         const vmssTagInfo = args.vmssTag.filter(keyVal => keyVal.trim())
-        if (vmssTagInfo.length != 2)
-          throw new Error('Please provide vmss proper tag key and value both');
-        processMultipleVirtualMachineScaleSets(client, ips, getLocalIps(), vmssTagInfo[0], vmssTagInfo[1])
+        if (vmssTagInfo.length != 2) {
+          throw new Error('Please provide vmss proper tag key and value both')
+        }
+        await processMultipleVirtualMachineScaleSets(client, ips, localIps, vmssTagInfo[0], vmssTagInfo[1])
       } else {
-        client.networkInterfaces.list(args.azure).then(interfaces => {
-          processInterfaces(client, interfaces, ips, getLocalIps())
-        })
+        const interfaces = client.networkInterfaces.list(args.azure)
+        await processInterfaces(client, interfaces, ips, localIps)
       }
-      errorCounter = 0;
-      if(intervalHandle == null)
+      resetRetryMechanism()
+      
+      if (!intervalHandle) {
         intervalHandle = setInterval(updateFunc, args.interval * 1000)
-    })
-    .catch((err) => {
-      console.log(err);
-      errorCounter++;
-      if (errorCounter > 10)
-        throw new Error(
-          "Failed to communicate with azure API"
-        );
-      if (intervalHandle) {
-        clearInterval(intervalHandle);
-        intervalHandle = null;
       }
-      intervalHandle = setTimeout(() => {
-        updateFunc();
-      }, args.azureRetry * 1000);
-    });
+    } catch (error) {
+      console.error('Azure connection error:', error)
+      errorCounter++
+      
+      if (errorCounter > MAX_RETRIES) {
+        console.error(`Max retries (${MAX_RETRIES}) exceeded. Giving up.`)
+        return
+      }
+      
+      if (intervalHandle) {
+        clearInterval(intervalHandle)
+        intervalHandle = null
+      }
+      
+  
+      const retryDelay = getNextRetryDelay()
+      console.log(`Retrying in ${retryDelay} seconds (attempt ${errorCounter + 1}/${MAX_RETRIES})...`)
+      
+      intervalHandle = setTimeout(updateFunc, retryDelay * 1000)
+    }
   }
+
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error)
+    if (intervalHandle) {
+      clearInterval(intervalHandle)
+      intervalHandle = null
+    }
+    process.exit(1)
+  })
 
   updateFunc()
 
-  setInterval(updateFunc, args.interval * 1000)
+  // Return cleanup function
+  return () => {
+    if (intervalHandle) {
+      clearInterval(intervalHandle)
+      intervalHandle = null
+    }
+  }
 }
