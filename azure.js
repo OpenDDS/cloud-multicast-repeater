@@ -189,7 +189,7 @@ module.exports = (args, sendTo) => {
       clearInterval(intervalHandle)
       intervalHandle = null
     }
-    process.exit(1)
+    throw(error)
   })
 
   updateFunc()
