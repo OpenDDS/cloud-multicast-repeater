@@ -7,17 +7,17 @@ export default defineConfig([
     ignores: ["eslint.config.js", "tests/**", "OpenDDS/**"],
   },
   js.configs.recommended,
-	{
-		files: ["**/*.js"],
-		plugins: {
+  {
+    files: ["**/*.js"],
+    plugins: {
       n: nPlugin,
-		},
-		extends: [
+    },
+    extends: [
       "n/recommended",
     ],
-		rules: {
-			"no-unused-vars": "warn",
-			"no-undef": "warn",
-		},
-	},
+    rules: {
+      "no-unused-vars": "warn",
+      "no-undef": "warn",
+    },
+  },
 ]);
