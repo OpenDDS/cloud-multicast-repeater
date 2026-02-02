@@ -17,6 +17,10 @@
     "eslint": "^9.34.0",
     "eslint-plugin-n": "^17.21.3"
   },
+  "overrides": {
+    "jws@^3": "3.2.3",
+    "jws@^4": "4.0.1"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint",
