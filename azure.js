@@ -15,7 +15,8 @@ if (!process.env['AZURE_SUBSCRIPTION_ID']) {
 }
 
 const subscriptionId = process.env['AZURE_SUBSCRIPTION_ID']
-let intervalHandle = null
+let timerHandle = null
+let polling = true // Either polling (normal case) or retrying (error case)
 let errorCounter = 0
 
 module.exports = (args, sendTo) => {
@@ -159,8 +160,17 @@ module.exports = (args, sendTo) => {
       }
       resetRetryMechanism()
 
-      if (!intervalHandle) {
-        intervalHandle = setInterval(updateFunc, args.interval * 1000)
+      if (!polling) {
+        // If we were retrying from an error, switch back to polling mode
+        if (timerHandle) {
+          clearTimeout(timerHandle)
+          timerHandle = null
+        }
+        polling = true
+      }
+
+      if (polling && !timerHandle) {
+        timerHandle = setInterval(updateFunc, args.interval * 1000)
       }
     } catch (error) {
       console.error('Azure connection error:', error)
@@ -171,24 +181,36 @@ module.exports = (args, sendTo) => {
         return
       }
 
-      if (intervalHandle) {
-        clearInterval(intervalHandle)
-        intervalHandle = null
+      if (polling) {
+        // Encounter an error while polling, switch to retry mode
+        if (timerHandle) {
+          clearInterval(timerHandle)
+          timerHandle = null
+        }
+        polling = false
       }
 
       const retryDelay = getNextRetryDelay()
       console.log(`Retrying in ${retryDelay} seconds (attempt ${errorCounter + 1}/${MAX_RETRIES})...`)
 
-      intervalHandle = setTimeout(updateFunc, retryDelay * 1000)
+      timerHandle = setTimeout(updateFunc, retryDelay * 1000)
+    }
+  }
+
+  const cleanupFunc = () => {
+    if (timerHandle) {
+      if (polling) {
+        clearInterval(timerHandle)
+      } else {
+        clearTimeout(timerHandle)
+      }
+      timerHandle = null
     }
   }
 
   process.on('uncaughtException', (error) => {
     console.error('Uncaught exception:', error)
-    if (intervalHandle) {
-      clearInterval(intervalHandle)
-      intervalHandle = null
-    }
+    cleanupFunc()
     throw(error)
   })
 
@@ -196,9 +218,6 @@ module.exports = (args, sendTo) => {
 
   // Return cleanup function
   return () => {
-    if (intervalHandle) {
-      clearInterval(intervalHandle)
-      intervalHandle = null
-    }
+    cleanupFunc()
   }
 }
